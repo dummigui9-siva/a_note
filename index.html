@@ -7,7 +7,7 @@
 
 <style>
 
-/* ================= APPLE DESIGN SYSTEM ================= */
+/* ================= APPLE DESIGN ================= */
 
 :root{
   --bg:#f2f2f7;
@@ -17,7 +17,6 @@
   --accent:#007aff;
   --danger:#ff3b30;
   --text:#1c1c1e;
-  --subtext:#8e8e93;
   --ink:black;
 }
 
@@ -28,7 +27,6 @@
     --card:#1c1c1e;
     --border:#2c2c2e;
     --text:#fff;
-    --subtext:#8e8e93;
     --ink:white;
   }
 }
@@ -79,11 +77,6 @@ body{
   padding:15px 20px;
   border-bottom:1px solid var(--border);
   cursor:pointer;
-  transition:0.2s;
-}
-
-.note-item:hover{
-  background:rgba(0,122,255,0.1);
 }
 
 .note-item.active{
@@ -101,7 +94,6 @@ body{
 
 .toolbar{
   height:60px;
-  backdrop-filter:blur(20px);
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -138,14 +130,21 @@ body{
 canvas{
   position:absolute;
   inset:0;
-  touch-action:none;
   z-index:2;
+  touch-action:none;
 }
 
-.empty-state{
+/* Empty State */
+
+.empty{
   margin:auto;
   opacity:0.5;
   font-size:18px;
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  z-index:0;
 }
 
 .footer{
@@ -172,10 +171,10 @@ canvas{
     <button class="delete-btn" onclick="deleteNote()">Delete</button>
   </div>
 
-  <div class="editor-container" id="editorContainer">
+  <div class="editor-container">
     <div id="editor" class="editor" contenteditable="true"></div>
     <canvas id="canvas"></canvas>
-    <div class="empty-state" id="emptyState">Select or Create a Note</div>
+    <div id="emptyState" class="empty">Select or Create a Note</div>
   </div>
 
   <div class="footer">© 2026 Notes | Powerful Simplicity</div>
@@ -185,7 +184,7 @@ canvas{
 
 /* ================= DATA ================= */
 
-let notes = JSON.parse(localStorage.getItem("appleFullNotes")) || [];
+let notes = JSON.parse(localStorage.getItem("appleNotesFull")) || [];
 let current = null;
 
 const editor = document.getElementById("editor");
@@ -193,73 +192,91 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const emptyState = document.getElementById("emptyState");
 
-resizeCanvas();
-window.addEventListener("resize", resizeCanvas);
-
 function resizeCanvas(){
   canvas.width = canvas.offsetWidth;
   canvas.height = canvas.offsetHeight;
   redraw();
 }
 
-/* ================= DRAWING ================= */
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
-let drawing=false;
+/* ================= APPLE PENCIL DRAWING FIX ================= */
 
-canvas.addEventListener("pointerdown", e=>{
-  drawing=true;
-  ctx.beginPath();
-  ctx.moveTo(e.offsetX,e.offsetY);
+let drawing = false;
+
+canvas.addEventListener("pointerdown", e => {
+
+  if (e.pointerType === "pen" || e.pointerType === "mouse") {
+    drawing = true;
+    ctx.beginPath();
+    ctx.moveTo(e.offsetX, e.offsetY);
+  }
+
 });
 
-canvas.addEventListener("pointermove", e=>{
-  if(!drawing) return;
-  ctx.lineWidth=2;
-  ctx.lineCap="round";
-  ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--ink');
-  ctx.lineTo(e.offsetX,e.offsetY);
+canvas.addEventListener("pointermove", e => {
+
+  if (!drawing) return;
+  if (e.pointerType !== "pen" && e.pointerType !== "mouse") return;
+
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.strokeStyle = getComputedStyle(document.documentElement)
+      .getPropertyValue('--ink');
+
+  ctx.lineTo(e.offsetX, e.offsetY);
   ctx.stroke();
 });
 
-canvas.addEventListener("pointerup", ()=>{
-  drawing=false;
-  saveNote();
+canvas.addEventListener("pointerup", e => {
+  if (e.pointerType === "pen" || e.pointerType === "mouse") {
+    drawing = false;
+    saveNote();
+  }
+});
+
+canvas.addEventListener("pointercancel", () => {
+  drawing = false;
 });
 
 /* ================= CRUD ================= */
 
 function addNote(){
-  const note={
+  const note = {
     title:"New Note",
     content:"",
-    drawing:null,
-    created:new Date().toLocaleString()
+    drawing:null
   };
   notes.unshift(note);
-  current=0;
+  current = 0;
   saveStorage();
   renderList();
   loadNote();
 }
 
 function deleteNote(){
-  if(current===null) return;
+  if(current === null) return;
   if(!confirm("Delete this note?")) return;
   notes.splice(current,1);
-  current=null;
+  current = null;
   saveStorage();
   renderList();
   clearEditor();
 }
 
 function renderList(){
-  const list=document.getElementById("notesList");
-  list.innerHTML="";
+  const list = document.getElementById("notesList");
+  list.innerHTML = "";
   notes.forEach((n,i)=>{
-    const div=document.createElement("div");
-    div.className="note-item"+(i===current?" active":"");
-    div.innerText=n.title;
-    div.onclick=()=>{current=i;loadNote();renderList();};
+    const div = document.createElement("div");
+    div.className = "note-item" + (i===current?" active":"");
+    div.innerText = n.title;
+    div.onclick = ()=>{
+      current = i;
+      loadNote();
+      renderList();
+    };
     list.appendChild(div);
   });
 }
@@ -269,37 +286,39 @@ function loadNote(){
   editor.style.display="block";
   canvas.style.display="block";
 
-  const note=notes[current];
-  document.getElementById("noteTitle").innerText=note.title;
-  editor.innerHTML=note.content;
+  const note = notes[current];
+  document.getElementById("noteTitle").innerText = note.title;
+  editor.innerHTML = note.content;
+
   clearCanvas();
+
   if(note.drawing){
-    let img=new Image();
-    img.src=note.drawing;
-    img.onload=()=>ctx.drawImage(img,0,0);
+    let img = new Image();
+    img.src = note.drawing;
+    img.onload = ()=> ctx.drawImage(img,0,0);
   }
 }
 
 function saveNote(){
   if(current===null) return;
-  notes[current].content=editor.innerHTML;
-  notes[current].drawing=canvas.toDataURL();
-  notes[current].title=editor.innerText.trim().substring(0,25)||"Untitled";
+  notes[current].content = editor.innerHTML;
+  notes[current].drawing = canvas.toDataURL();
+  notes[current].title = editor.innerText.trim().substring(0,25) || "Untitled";
   saveStorage();
   renderList();
 }
 
 function saveStorage(){
-  localStorage.setItem("appleFullNotes",JSON.stringify(notes));
+  localStorage.setItem("appleNotesFull", JSON.stringify(notes));
 }
 
 function clearEditor(){
   editor.innerHTML="";
   clearCanvas();
-  document.getElementById("noteTitle").innerText="No Note Selected";
-  emptyState.style.display="block";
   editor.style.display="none";
   canvas.style.display="none";
+  emptyState.style.display="block";
+  document.getElementById("noteTitle").innerText="No Note Selected";
 }
 
 function clearCanvas(){
@@ -310,7 +329,7 @@ function redraw(){
   if(current!==null) loadNote();
 }
 
-editor.addEventListener("input",saveNote);
+editor.addEventListener("input", saveNote);
 
 if(notes.length===0){
   clearEditor();
