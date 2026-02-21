@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notes</title>
+
+<style>
+
+/* ================= APPLE DESIGN SYSTEM ================= */
+
+:root{
+  --bg:#f2f2f7;
+  --sidebar:#ffffff;
+  --card:#ffffff;
+  --border:#e5e5ea;
+  --accent:#007aff;
+  --danger:#ff3b30;
+  --text:#1c1c1e;
+  --subtext:#8e8e93;
+  --ink:black;
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#000;
+    --sidebar:#1c1c1e;
+    --card:#1c1c1e;
+    --border:#2c2c2e;
+    --text:#fff;
+    --subtext:#8e8e93;
+    --ink:white;
+  }
+}
+
+body{
+  margin:0;
+  font-family:-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  display:flex;
+  height:100vh;
+  overflow:hidden;
+}
+
+/* ================= SIDEBAR ================= */
+
+.sidebar{
+  width:320px;
+  background:var(--sidebar);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+}
+
+.sidebar-header{
+  padding:20px;
+  font-size:26px;
+  font-weight:600;
+}
+
+.add-btn{
+  margin:0 20px 15px 20px;
+  padding:10px;
+  border:none;
+  background:var(--accent);
+  color:white;
+  border-radius:14px;
+  font-size:15px;
+  cursor:pointer;
+}
+
+.notes-list{
+  flex:1;
+  overflow-y:auto;
+}
+
+.note-item{
+  padding:15px 20px;
+  border-bottom:1px solid var(--border);
+  cursor:pointer;
+  transition:0.2s;
+}
+
+.note-item:hover{
+  background:rgba(0,122,255,0.1);
+}
+
+.note-item.active{
+  background:rgba(0,122,255,0.2);
+}
+
+/* ================= MAIN ================= */
+
+.main{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  background:var(--card);
+}
+
+.toolbar{
+  height:60px;
+  backdrop-filter:blur(20px);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 25px;
+  border-bottom:1px solid var(--border);
+  font-weight:500;
+}
+
+.delete-btn{
+  background:var(--danger);
+  border:none;
+  color:white;
+  padding:8px 14px;
+  border-radius:12px;
+  cursor:pointer;
+}
+
+.editor-container{
+  position:relative;
+  flex:1;
+}
+
+.editor{
+  position:absolute;
+  inset:0;
+  padding:30px;
+  font-size:19px;
+  line-height:1.6;
+  outline:none;
+  overflow:auto;
+  z-index:1;
+}
+
+canvas{
+  position:absolute;
+  inset:0;
+  touch-action:none;
+  z-index:2;
+}
+
+.empty-state{
+  margin:auto;
+  opacity:0.5;
+  font-size:18px;
+}
+
+.footer{
+  padding:10px;
+  text-align:center;
+  font-size:12px;
+  opacity:0.4;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-header">Notes</div>
+  <button class="add-btn" onclick="addNote()">New Note</button>
+  <div class="notes-list" id="notesList"></div>
+</div>
+
+<div class="main">
+  <div class="toolbar">
+    <div id="noteTitle">No Note Selected</div>
+    <button class="delete-btn" onclick="deleteNote()">Delete</button>
+  </div>
+
+  <div class="editor-container" id="editorContainer">
+    <div id="editor" class="editor" contenteditable="true"></div>
+    <canvas id="canvas"></canvas>
+    <div class="empty-state" id="emptyState">Select or Create a Note</div>
+  </div>
+
+  <div class="footer">© 2026 Notes | Powerful Simplicity</div>
+</div>
+
+<script>
+
+/* ================= DATA ================= */
+
+let notes = JSON.parse(localStorage.getItem("appleFullNotes")) || [];
+let current = null;
+
+const editor = document.getElementById("editor");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const emptyState = document.getElementById("emptyState");
+
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+function resizeCanvas(){
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  redraw();
+}
+
+/* ================= DRAWING ================= */
+
+let drawing=false;
+
+canvas.addEventListener("pointerdown", e=>{
+  drawing=true;
+  ctx.beginPath();
+  ctx.moveTo(e.offsetX,e.offsetY);
+});
+
+canvas.addEventListener("pointermove", e=>{
+  if(!drawing) return;
+  ctx.lineWidth=2;
+  ctx.lineCap="round";
+  ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--ink');
+  ctx.lineTo(e.offsetX,e.offsetY);
+  ctx.stroke();
+});
+
+canvas.addEventListener("pointerup", ()=>{
+  drawing=false;
+  saveNote();
+});
+
+/* ================= CRUD ================= */
+
+function addNote(){
+  const note={
+    title:"New Note",
+    content:"",
+    drawing:null,
+    created:new Date().toLocaleString()
+  };
+  notes.unshift(note);
+  current=0;
+  saveStorage();
+  renderList();
+  loadNote();
+}
+
+function deleteNote(){
+  if(current===null) return;
+  if(!confirm("Delete this note?")) return;
+  notes.splice(current,1);
+  current=null;
+  saveStorage();
+  renderList();
+  clearEditor();
+}
+
+function renderList(){
+  const list=document.getElementById("notesList");
+  list.innerHTML="";
+  notes.forEach((n,i)=>{
+    const div=document.createElement("div");
+    div.className="note-item"+(i===current?" active":"");
+    div.innerText=n.title;
+    div.onclick=()=>{current=i;loadNote();renderList();};
+    list.appendChild(div);
+  });
+}
+
+function loadNote(){
+  emptyState.style.display="none";
+  editor.style.display="block";
+  canvas.style.display="block";
+
+  const note=notes[current];
+  document.getElementById("noteTitle").innerText=note.title;
+  editor.innerHTML=note.content;
+  clearCanvas();
+  if(note.drawing){
+    let img=new Image();
+    img.src=note.drawing;
+    img.onload=()=>ctx.drawImage(img,0,0);
+  }
+}
+
+function saveNote(){
+  if(current===null) return;
+  notes[current].content=editor.innerHTML;
+  notes[current].drawing=canvas.toDataURL();
+  notes[current].title=editor.innerText.trim().substring(0,25)||"Untitled";
+  saveStorage();
+  renderList();
+}
+
+function saveStorage(){
+  localStorage.setItem("appleFullNotes",JSON.stringify(notes));
+}
+
+function clearEditor(){
+  editor.innerHTML="";
+  clearCanvas();
+  document.getElementById("noteTitle").innerText="No Note Selected";
+  emptyState.style.display="block";
+  editor.style.display="none";
+  canvas.style.display="none";
+}
+
+function clearCanvas(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+}
+
+function redraw(){
+  if(current!==null) loadNote();
+}
+
+editor.addEventListener("input",saveNote);
+
+if(notes.length===0){
+  clearEditor();
+}else{
+  renderList();
+}
+
+</script>
+
+</body>
+</html>
